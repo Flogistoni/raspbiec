@@ -51,7 +51,7 @@ The command line utility `raspbiec` is used like this:
 
 There is a binary of the kernel module compiled against a recent kernel
 in the `bin_kernel_...` subdirectory, but in case it is out of sync,
-there are compiling instructions for example in <http://chavez.bitarmory.com/archive/2013/01/16/compiling-kernel-modules-for-raspberry-pi.aspx>,
+there are compiling instructions for example in <http://bchavez.bitarmory.com/archive/2013/01/16/compiling-kernel-modules-for-raspberry-pi.aspx>,
 and of course more can be found with the help of your favourite search engine.
 The makefile expects that the variables `KERNEL_SRC` and `CCPREFIX` have some
 meaningful values.
