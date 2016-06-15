@@ -16,29 +16,37 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef RASPBIEC_H
-#define RASPBIEC_H
+#ifndef RASPBIEC_EXCEPTION_H
+#define RASPBIEC_EXCEPTION_H
 
-#include <stdint.h>
-#include <vector>
-#include <string>
-#include "raspbiec_common.h"
-#include "raspbiec_device.h"
-#include "raspbiec_diskimage.h"
+#include <exception>
 
-class computer
+class raspbiec_error : public std::exception
 {
 public:
-    computer(pipefd &bus, const bool foreground);
-    ~computer();
-    void load(const char *filename, int device_number);
-    void save(const char *filename, int device_number);
-    void command(const char *command, int device_number);
-    void read_error_channel(int device_number);
+    explicit raspbiec_error(const int iec_status);
+    virtual ~raspbiec_error() throw();
+    virtual const char* what() const throw();
+    int status() const;
+    
 private:
-    device m_dev;
-    bool m_foreground;
+    int m_status;
+    mutable char msg[30];
 };
 
 
-#endif // RASPBIEC_H
+class raspbiec_sighandler
+{
+public:
+    static void setup(void);
+    static void react(bool want_to_catch);
+    
+private:	 
+    static void sighandler(int);
+    
+private:
+    static struct sigaction sa;
+    static bool sigactive;
+};
+
+#endif // RASPBIEC_EXCEPTION_H

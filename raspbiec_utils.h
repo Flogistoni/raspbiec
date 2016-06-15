@@ -19,9 +19,15 @@
 #ifndef RASPBIEC_UTILS_H
 #define RASPBIEC_UTILS_H
 
-#include <exception>
 #include <vector>
 #include <string>
+#include "raspbiec_diskimage.h"
+#include "raspbiec_common.h"
+#include "raspbiec_types.h"
+
+bool ispetsciinum(const unsigned char c);
+bool ispetsciialpha(const unsigned char c);
+bool ispetsciialnum(const unsigned char c);
 
 const char petscii2ascii(const unsigned char petschar);
 void petscii2ascii(const std::vector<unsigned char>& petschar,
@@ -31,48 +37,56 @@ const unsigned char ascii2petscii(const char ascchar);
 void ascii2petscii( const std::string& ascchar,
 		    std::vector<unsigned char>& petschar );
 
-void basic_listing(const std::vector<unsigned char>& prg);
+std::vector<unsigned char>::iterator petsciialnum(
+	std::vector<unsigned char>::iterator petiter,
+	const std::vector<unsigned char>::iterator petend,
+	std::vector<unsigned char>& petstr);
+	
+void basic_listing(const databuf_t &prg);
 
-size_t read_local_file(
-    std::vector<unsigned char> &prg,
-    const char *prgname);
+size_t read_local_file(databuf_t &data, const char *name);
 
-void write_local_file(
-    const std::vector<unsigned char> &prg,
-    const char *prgname);
+void write_local_file(const databuf_t &data, const char *name);
 
-bool local_file_exists(const char *prgname);
+int open_local_file(const char *name, const char* mode);
 
-void read_local_dir(
-    std::vector<unsigned char> &buf,
-    const char *dirname);
+void close_local_file(int& handle);
 
-class raspbiec_error : public std::exception
+bool local_file_exists(const char *name);
+
+// Read <amount> of data from file, replace data in <data>
+size_t read_from_local_file(const int handle, databuf_t &data, size_t amount);
+// Write <data> to file, return written amount
+const_databuf_iter write_to_local_file(const int handle, const_databuf_iter begin, const_databuf_iter end);
+
+void read_local_dir(databuf_t &buf, const char *dirname, bool verbose);
+
+void read_diskimage_dir(databuf_t &buf, Diskimage& diskimage, bool verbose);
+
+class pipefd
 {
 public:
-    explicit raspbiec_error(const int iec_status);
-    virtual ~raspbiec_error() throw();
-    virtual const char* what() const throw();
-    int status() const;
-	
+	pipefd();
+	~pipefd();
+	void move(pipefd &other);
+	void open_pipe();
+	void open_dev();
+	void close_pipe();
+	bool is_open_directional();
+	bool is_open_nondirectional();
+	bool is_device();
+	int write_end();
+	int read_end();
+	void set_direction_A_to_B() { set_direction(true); }
+	void set_direction_B_to_A() { set_direction(false); }
 private:
-    int m_status;
-    mutable char msg[30];
-};
+	bool all_open();
+	void set_write(int *fd);
+	void set_read(int *fd);
+	void set_direction(bool fwd);
 
-
-class raspbiec_sighandler
-{
-public:
-    static void setup(void);
-    static void react(bool want_to_catch);
-
-private:	 
-    static void sighandler(int);
-	
-private:
-    static struct sigaction sa;
-    static bool sigactive;
+	int m_fd[4];
+	int m_fd_size; // 1 == dev, 4 == two pipes
 };
 
 #endif // RASPBIEC_UTILS_H

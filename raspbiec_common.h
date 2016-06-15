@@ -9,6 +9,8 @@
 /* Bus status and command codes */
 #define IEC_OK                       0
 
+#define IEC_COMMAND_RANGE_START   -0x100
+
 #define IEC_CLEAR_ERROR           -0x100
 #define IEC_LAST_BYTE_NEXT        -0x101 /* Next byte last when transmitting */
 #define IEC_EOI                   -0x102 /* Last byte when receiving */
@@ -22,6 +24,7 @@
 #define IEC_DRIVE_DEVICE(byte)     ((-(byte))&0x1f)
 #define IEC_IDENTITY_IS_DRIVE(byte) (((-(byte))&~0x1f)==0x1E0)
 
+#define IEC_COMMAND_RANGE_END     -0x1FF
 
 #define IEC_ILLEGAL_DEVICE_NUMBER -0x200
 #define IEC_MISSING_FILENAME      -0x201
@@ -39,6 +42,12 @@
 #define IEC_SIGNAL                -0x213
 #define IEC_BUS_NOT_IDLE          -0x214
 #define IEC_SAVE_ERROR            -0x215
+#define IEC_UNKNOWN_DISK_IMAGE    -0x216
+#define IEC_ILLEGAL_TRACK_SECTOR  -0x217
+#define IEC_DISK_IMAGE_ERROR      -0x218
+#define IEC_NO_SPACE_LEFT_ON_DEVICE -0x219
+#define IEC_FILE_READ_ERROR       -0x220
+#define IEC_FILE_WRITE_ERROR      -0x221
 
 #define CMD_LISTEN(device)  (0x20|(device))
 #define CMD_IS_LISTEN(byte) ((0xe0&(byte))==0x20)
@@ -58,5 +67,31 @@
 #define CMD_GETDEV(byte)    ((byte)&0x1f)
 #define CMD_GET2ND(byte)    ((byte)&0xf0)
 #define CMD_GETSEC(byte)    ((byte)&0x0f)
+
+/* Some names for character constants used in the code */
+enum petscii_codes
+{
+    PETSCII_CR    = 0x0D,
+    PETSCII_SPC   = 0x20,
+    PETSCII_ET    = 0x26,
+    PETSCII_COMMA = 0x2C,
+    PETSCII_MINUS = 0x2D,
+    PETSCII_COLON = 0x3A,
+    PETSCII_a     = 0x41,
+    PETSCII_b     = 0x42,
+    PETSCII_c     = 0x43,
+    PETSCII_d     = 0x44,
+    PETSCII_e     = 0x45,
+    PETSCII_f     = 0x46,
+    PETSCII_i     = 0x49,
+    PETSCII_m     = 0x4D,
+    PETSCII_n     = 0x4E,
+    PETSCII_p     = 0x50,
+    PETSCII_r     = 0x52,
+    PETSCII_s     = 0x53,
+    PETSCII_u     = 0x55,
+    PETSCII_v     = 0x56,
+    PETSCII_w     = 0x57,
+};
 
 #endif /* RASPBIEC_COMMON_H */

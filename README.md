@@ -12,12 +12,13 @@ developed and tested with a Commodore 64 and a 1541-II.
 
 What it can currently do:
 
-* Load and save single files to the disk drive
-* Serve single files (load and save) from a Pi directory to the computer
+* Load and save single PRG files to the disk drive
+* Serve single PRG files (load and save) from a Pi directory to the computer
+* Serve single PRG files (load and save) from a disk image to the computer
 
 What it cannot yet do:
 
-* Use disk images
+* Disk drive commands, other file types than PRG
 * Support fastloaders
 
 
@@ -42,16 +43,16 @@ The debug prints go to `/var/log/messages`.
 The command line utility `raspbiec` is used like this:
 
     pi@raspberrypi ~ $ ./raspbiec 
-    As drive:    raspbiec [serve] <directory> [<device #>]
-    As computer: raspbiec load <filename> [<device #>]
-                 raspbiec save <filename> [<device #>]
-                 raspbiec cmd <command> [<device #>]
-                 raspbiec errch [<device #>]
+	As drive:    raspbiec [serve] <directory or disk image> [<command>|<device #>]
+					<command> is a computer command below applied to the disk image;
+					in this way files can be transferred between the filesystem and the image
+	As computer: raspbiec load <filename> [<device #>]
+				 raspbiec save <filename> [<device #>]
+				 raspbiec cmd <command> [<device #>]
+				 raspbiec errch [<device #>]
 
-
-There is a binary of the kernel module compiled against a recent kernel
-in the `bin_kernel_...` subdirectory, but in case it is out of sync,
-there are compiling instructions for example in <http://bchavez.bitarmory.com/archive/2013/01/16/compiling-kernel-modules-for-raspberry-pi.aspx>,
+There is a binary of the kernel module compiled against an old kernel
+in the `bin_kernel_...` subdirectory. There are compiling instructions for example in <http://bchavez.bitarmory.com/archive/2013/01/16/compiling-kernel-modules-for-raspberry-pi.aspx>,
 and of course more can be found with the help of your favourite search engine.
 The makefile expects that the variables `KERNEL_SRC` and `CCPREFIX` have some
 meaningful values.

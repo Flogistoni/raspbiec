@@ -22,11 +22,15 @@
 #include <cstddef>
 #include <stdint.h>
 #include <vector>
+#include <iterator>
+#include "raspbiec_common.h"
+#include "raspbiec_types.h"
+#include "raspbiec_utils.h"
 
 class device
 {
 public:
-    device();
+    device(const bool foreground);
     ~device();
 
     enum Identity
@@ -38,7 +42,7 @@ public:
 	drive_11 = 11
     };
 
-    void set_identity(const int identity);
+    void set_identity(const int new_identity, pipefd &bus);
 
     // When functioning as a drive
     enum Command
@@ -46,37 +50,46 @@ public:
 	Unknown,
 	Open,
 	Close,
-	Save,
-	Load,
+	Receive,
+	Send,
 	Unlisten,
 	Untalk,
 	Exit,
 	OpenOtherDevice,
 	CloseOtherDevice,
-	SaveOtherDevice,
-	LoadOtherDevice
+	ReceiveOtherDevice,
+	SendOtherDevice
     };
 
-    Command receive_command(int device_number, int &chan);
+    Command receive_command(int device_number, int &chan, int command_byte);
 
     // When functioning as a computer
-    size_t load( std::vector<unsigned char>& load_buf,
-		 const char *const name,
-		 int device_number,
-		 int secondary_address );
-    
-    size_t save( const std::vector<unsigned char>& save_buf, 
-		 const char *const name,
-		 int device_number,
-		 int secondary_address );
+    template <class OutputIterator>
+    OutputIterator load(
+    		OutputIterator load_buf,
+			const char *const name,
+			int device_number,
+			int secondary_address );
+
+    databuf_iter save(
+    		databuf_iter first,
+			databuf_iter last,
+			const char *const name,
+			int device_number,
+			int secondary_address );
 
     void open_file( const char *name, int device, int secondary_address );
     void close_file(int device, int secondary_address);
 
-    size_t send_data(const std::vector<unsigned char>& data_buf,
+    databuf_iter send_data (
+    		databuf_iter first,
+			databuf_iter last,
 		     int device_number,
 		     int channel );
-    size_t receive_data(std::vector<unsigned char>& data_buf,
+
+    template <class OutputIterator>
+    OutputIterator receive_data(
+   		    OutputIterator data_buf,
 			int device_number,
 			int channel );
 
@@ -86,12 +99,12 @@ public:
     };
 
     // Common routines
-    size_t send_to_bus(const std::vector<unsigned char>& data_buf);
-    size_t receive_from_bus(std::vector<unsigned char>& data_buf,
-			    long timeout_ms = timeout_default);
-    size_t send_to_bus_verbose(const std::vector<unsigned char>& data_buf);
-    size_t receive_from_bus_verbose(std::vector<unsigned char>& data_buf,
-				    long timeout_ms = timeout_default);
+    databuf_iter send_to_bus(databuf_iter first, databuf_iter last);
+    databuf_iter send_to_bus_verbose (databuf_iter first, databuf_iter last);
+    template <class OutputIterator>
+    OutputIterator receive_from_bus(OutputIterator data_buf, long timeout_ms = timeout_default);
+    template <class OutputIterator>
+    OutputIterator receive_from_bus_verbose(OutputIterator data_buf, long timeout_ms = timeout_default);
     void talk( int device );
     void listen( int device );
     void untalk();
@@ -103,18 +116,22 @@ public:
     void command( int command );
     void secondary_command(int secondary_command, bool talk);
     void send_byte_buffered_init(void);
-    void send_byte_buffered( int16_t byte );
-    void send_last_byte();
-    void send_byte( int16_t byte );
+    // Return # of bytes actually sent to bus
+    int send_byte_buffered( int16_t byte );
+    int send_last_byte();
+    int send_byte( int16_t byte );
     int16_t receive_byte( long timeout_ms = timeout_default );
     void clear_error(void);
 
 private:
-    int devfd;
+    int identity;
+    pipefd m_bus;
     bool buffered;
     int16_t buffered_byte;
+    size_t data_counter;
     int16_t lasterror;
     bool verbose;
+    bool foreground;
 };
 
 #endif // RASPBIEC_DEVICE_H

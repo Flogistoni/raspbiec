@@ -23,8 +23,8 @@
 
 #define DEVICE_NAME "device"
 #define CLASS_NAME "raspbiec"
-#define RASPBIEC_IN_FIFO_SIZE 1024
-#define RASPBIEC_OUT_FIFO_SIZE 1024
+#define RASPBIEC_READ_FIFO_SIZE 1024
+#define RASPBIEC_WRITE_FIFO_SIZE 1024
 
 /* Voltages on IEC bus */
 #define IEC_LO    0
@@ -41,8 +41,10 @@
 #define IEC_CLK_OUT  23
 #define IEC_DATA_OUT 24
 
-#define IEC_DEBUG1    4
-#define IEC_DEBUG2   25
+#define IEC_DEBUG0    4
+#define IEC_DEBUG1   25
+#define IEC_DEBUG2    8
+#define IEC_DEBUG3    7
 
 /* IEC command ranges */
 #define IEC_CMD_RANGE             -0x20
@@ -77,8 +79,8 @@ static bool iec_bus_is_idle(void);
 static void iec_set_atn(int value);
 static void iec_set_clk(int value);
 static void iec_set_data(int value);
-                                                        /* return true if */
-static bool iec_wait_atn(int value, bool checkmissed);  /* waiting is required */
+                                                       /* return true if */
+static bool iec_wait_atn(int value, bool checkmissed); /* waiting is required */
 static bool iec_wait_data(int value); /* return true if waiting is required */
 static bool iec_wait_clk(int value);  /* return true if waiting is required */
 static bool iec_wait(int timeout /* microseconds */); /* unconditional wait */
@@ -87,7 +89,9 @@ static void iec_cancel_waits(void);
 
 /* return true if timeout expired */
 static bool iec_wait_data_busy(int value, int timeout /* microseconds */);
+static bool iec_wait_data_atn_busy(int value, int timeout /* microseconds */);
 static bool iec_wait_clk_busy(int value, int timeout /* microseconds */);
+//static bool iec_wait_clk_atn_busy(int value, int timeout /* microseconds */);
 
 static uint32_t stc_read_cycles(void);
 

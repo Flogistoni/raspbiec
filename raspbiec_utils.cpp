@@ -16,15 +16,19 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "raspbiec_utils.h"
-#include "raspbiec_common.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <signal.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <errno.h>
+#include <iterator>
+#include "raspbiec_utils.h"
+#include "raspbiec_common.h"
+#include "raspbiec_diskimage.h"
+#include "raspbiec_exception.h"
 
 // PETSCII -> ASCII printable chars
 // TODO: Find more substitutions
@@ -48,15 +52,33 @@ static unsigned char petscii[256] =
     /*F0-FF*/ ' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',
 };
 
+bool ispetsciinum(const unsigned char c)
+{
+	return c >= 0x30 && c <= 0x39;
+}
+
+bool ispetsciialpha(const unsigned char c)
+{
+	return
+		(c >= 0x41 && c <= 0x5A) ||
+		(c >= 0x61 && c <= 0x7A) ||
+		(c >= 0xC1 && c <= 0xDA));
+}
+
+bool ispetsciialnum(const unsigned char c)
+{
+	return ispetsciinum(c) || ispetsciialpha(c);
+}
+
 const char petscii2ascii(const unsigned char petschar)
 {
     if (petschar >= 0 && petschar <= 255)
     {
-	return petscii[petschar];
+		return petscii[petschar];
     }
     else
     {
-	return ' ';
+		return ' ';
     }
 }
 
@@ -64,9 +86,9 @@ void petscii2ascii(const std::vector<unsigned char>& petschar,
 		   std::string& ascchar)
 {
     ascchar.clear();
-    for (int i=0; i<petschar.size(); ++i)
+    for (unsigned int i=0; i<petschar.size(); ++i)
     {
-	ascchar.push_back(petscii2ascii(petschar[i]));
+		ascchar.push_back(petscii2ascii(petschar[i]));
     }
 }
 
@@ -76,15 +98,15 @@ const unsigned char ascii2petscii(const char ascchar)
     // default characted in the table
     if (ascchar == ' ')
     {
-	return 0x20;
+		return 0x20;
     }
 
     for (int i=0; i<=255; ++i)
     {
-	if (ascchar == petscii[i])
-	{
-	    return i;
-	}
+		if (ascchar == petscii[i])
+		{
+			return i;
+		}
     }
 
     return 0x20;
@@ -94,19 +116,31 @@ void ascii2petscii( const std::string& ascchar,
 		    std::vector<unsigned char>& petschar )
 {
     petschar.clear();
-    for (int i=0; i<ascchar.size(); ++i)
+    for (unsigned int i=0; i<ascchar.size(); ++i)
     {
-	petschar.push_back(ascii2petscii(ascchar[i]));
+		petschar.push_back(ascii2petscii(ascchar[i]));
     }
 }
 
-void basic_listing(const std::vector<unsigned char>& prg)
+std::vector<unsigned char>::iterator petsciialnum(
+	std::vector<unsigned char>::iterator petiter,
+	const std::vector<unsigned char>::iterator petend,
+	std::vector<unsigned char>& petstr)
+{
+	for (; petiter != petend && ispetsciialnum(*petiter); ++petiter)
+	{
+		petstr.push_back(*petiter);
+	}
+	return petiter;
+}
+
+void basic_listing(const databuf_t& prg)
 {
     long nextline = 0;
     int linenum = 0;
 
     // i=2: skip load address
-    for (long i=2, c=0; i<prg.size(); ++i,++c)
+    for (unsigned long i=2, c=0; i<prg.size(); ++i,++c)
     {
 	switch(c)
 	{
@@ -153,63 +187,123 @@ class fdptr
     F m_del;
 public:
     fdptr(T *fdp, F deleter) : m_fdp(fdp), m_del(deleter) {}
-    ~fdptr() { F(m_del); }
+    ~fdptr() { if (m_fdp) (*m_del)(m_fdp); }
     operator T*() { return m_fdp; }
 };
 
-size_t read_local_file(
-    std::vector<unsigned char> &prg,
-    const char *prgname)
+size_t read_local_file(databuf_t &data, const char *name)
 {
     size_t read = 0;
 
     fdptr<FILE,int(*)(FILE*)>
-	fp( fopen(prgname, "r"), fclose );
+	fp( fopen(name, "r"), fclose );
     if (!fp)
     {
-	fprintf(stderr,"Could not open local file '%s'\n",prgname);
+	fprintf(stderr,"Could not open local file '%s'\n",name);
 	throw raspbiec_error(IEC_FILE_NOT_FOUND);
     }
 
     struct stat sb;
-    if (fstatat(AT_FDCWD, prgname, &sb, AT_NO_AUTOMOUNT) == -1)
+    if (fstatat(AT_FDCWD, name, &sb, AT_NO_AUTOMOUNT) == -1)
     {
-	fprintf(stderr,"Could not get size of file '%s'\n",prgname);
+	fprintf(stderr,"Could not get size of file '%s'\n",name);
 	throw raspbiec_error(IEC_FILE_NOT_FOUND);
     }
 
-    prg.resize(sb.st_size);
+    data.resize(sb.st_size);
 
-    read = fread(prg.data(), sizeof(*prg.data()), prg.size(), fp);
+    read = fread(data.data(), sizeof(*data.data()), data.size(), fp);
 
     return read;
 }
 
-void write_local_file(
-    const std::vector<unsigned char> &prg,
-    const char *prgname)
+void write_local_file(const databuf_t &data, const char *name)
 {
     fdptr<FILE,int(*)(FILE*)>
-	fp( fopen(prgname, "w"), fclose );
+	fp( fopen(name, "w"), fclose );
     if (fp)
     {
-	size_t written = fwrite(prg.data(),
-				sizeof(*prg.data()),
-				prg.size(),
+	size_t written = fwrite(data.data(),
+				sizeof(*data.data()),
+				data.size(),
 				fp);
-	if (written != prg.size())
+	if (written != data.size())
 	{
-	    fprintf(stderr, "Could not store the whole program "
-		    "(%d bytes of %d)\n", written, prg.size());
+	    fprintf(stderr, "Could not store the whole data "
+		    "(%ld bytes of %ld)\n", written, data.size());
 	    throw raspbiec_error(IEC_GENERAL_ERROR);
 	}
     }
 }
 
-bool local_file_exists(const char *prgname)
+int open_local_file(const char *name, const char* mode)
+{
+	if (!name || !mode)
+		return -1;
+
+	int oflag = 0;
+
+
+	for (const char *p = mode; *p != '\0'; ++p)
+	{
+		switch(*p)
+		{
+		case 'r':
+			oflag = O_RDONLY;
+			break;
+		case 'w':
+			oflag = O_WRONLY | O_CREAT;
+			break;
+		case 'a':
+			oflag = O_RDWR | O_APPEND;
+			break;
+		case '+':
+			if (oflag & O_RDONLY)
+			{
+				oflag &= O_RDONLY;
+				oflag |= O_RDWR;
+			}
+			if (oflag & O_WRONLY)
+			{
+				oflag &= O_WRONLY;
+				oflag |= O_RDWR;
+			}
+			break;
+		}
+	}
+
+	int fd = open(name, oflag);
+	if (fd < 0)
+	{
+		fprintf(stderr,"Could not open local file '%s', error %d\n",name, fd);
+		throw raspbiec_error(IEC_FILE_NOT_FOUND);
+	}
+
+#if 0
+	if (fstatat(AT_FDCWD, ch.ascii, &ch.sb, AT_NO_AUTOMOUNT) == -1)
+	{
+		close_local_file(ch);
+		fprintf(stderr,"Could not get stat of file '%s'\n",name);
+		throw raspbiec_error(IEC_FILE_READ_ERROR);
+	}
+#endif
+    return 0;
+}
+
+void close_local_file(int& handle)
+{
+	if (handle >= 0)
+	{
+		close(handle);
+		handle = -1;
+	}
+}
+
+
+bool local_file_exists(const char *name)
 {
     fdptr<FILE,int(*)(FILE*)>
-	fp( fopen(prgname, "r"), fclose );
+	fp( fopen(name, "r"), fclose );
     if (fp)
     {
 	return true;
@@ -217,26 +311,60 @@ bool local_file_exists(const char *prgname)
     return false;
 }
 
+size_t read_from_local_file(const int handle, std::vector<unsigned char> &data, size_t amount)
+{
+	ssize_t rd = 0;
+	if (handle >= 0)
+	{
+		data.resize(amount);
+		rd = read(handle, data.data(), amount);
+		if (read < 0)
+		{
+			fprintf(stderr, "Read error, errno %d", errno);
+			throw raspbiec_error(IEC_FILE_READ_ERROR);
+		}
+
+		data.resize(rd);
+	}
+	return rd;
+}
+
+const_databuf_iter write_to_local_file(const int handle, const_databuf_iter begin, const_databuf_iter end)
+{
+	ssize_t written = 0;
+	const_databuf_iter position = begin;
+	if (handle >= 0)
+	{
+		written = write(handle, &(*begin), &(*end) - &(*begin));
+		if (written < 0)
+		{
+			fprintf(stderr, "Write error, errno %d", errno);
+			throw raspbiec_error(IEC_FILE_WRITE_ERROR);
+		}
+		std::advance(position, written);
+	}
+	return position;
+}
 
 static const int16_t header_line[] =
 { 0x01, 0x04, 0x01, 0x01, 0x00, 0x00, 0x12, 0x22,
   0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
   0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
   0x22, 0x20, 0x30, 0x30, 0x20, 0x32, 0x41, 0x00, -1 };
+
 static const int16_t file_line[] =
 { 0x01, 0x01,   -2,   -3, 0x20, 0x22,   -4,   -4,
     -4,   -4,   -4,   -4,   -4,   -4,   -4,   -4,
     -4,   -4,   -4,   -4,   -4,   -4,   -5, 0x20,
   0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x20, 0x00, -1 };
+
 static const int16_t footer_line[] =
 { 0x01, 0x01,   -2,   -3, 0x42, 0x4C, 0x4F, 0x43,
   0x4B, 0x53, 0x20, 0x46, 0x52, 0x45, 0x45, 0x2E,
   0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
   0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00, -1 };
 
-void read_local_dir(
-    std::vector<unsigned char> &buf,
-    const char *dirname)
+void read_local_dir(databuf_t &buf, const char *dirname, bool verbose)
 {
     const int16_t *p;
 
@@ -244,214 +372,420 @@ void read_local_dir(
 	dirp( opendir(dirname), closedir );
     if (!dirp)
     {
-	throw raspbiec_error(IEC_FILE_NOT_FOUND);
+        throw raspbiec_error(IEC_FILE_NOT_FOUND);
     }
 
     // Construct a BASIC listing from the directory info
     for (p = header_line; *p != -1; ++p)
     {
-	buf.push_back(*p);
-	printf("%c", petscii2ascii(*p));
+        buf.push_back(*p);
+        if (verbose) printf("%c", petscii2ascii(*p));
     }
-    printf("\n");
+    if (verbose) printf("\n");
 
     struct stat sb;
     struct dirent *dp;
     while ((dp = readdir(dirp)) != NULL)
     {
-	if (fstatat(dirfd(dirp),dp->d_name,&sb,AT_NO_AUTOMOUNT) == -1)
-	    continue;
+        if (fstatat(dirfd(dirp),dp->d_name,&sb,AT_NO_AUTOMOUNT) == -1)
+            continue;
+        int blocks = (sb.st_size + 253) / 254;
+        if (blocks > 65535)
+            blocks = 65535;
 
-	int blocks = (sb.st_size + 253) / 254;
-	if (blocks > 65535)
-	    blocks = 65535;
-
-	int i=0;
-	for (p = file_line; *p != -1; ++p)
-	{
-	    switch(*p)
-	    {
-	    default:
-		buf.push_back(*p);
-		printf("%c", petscii2ascii(*p));
-		break;
-	    case -2: // Blocks LSB
-		buf.push_back(blocks % 256);
-		break;
-	    case -3: // Blocks MSB
-		buf.push_back(blocks / 256);
-		printf("%d",blocks);
-		if (blocks < 100)
-		{
-		    buf.push_back(0x20);
-		    printf(" ");
-		}
-		if (blocks < 10)
-		{
-		    buf.push_back(0x20);
-		    printf(" ");
-		}
-		break;
-	    case -5: // Filename length hard limit
-		if (i>=0) i=-1;
-	    case -4: // State machine for name writing
-		if (i>=0)
-		{
-		    char c = dp->d_name[i++];
-		    if (c=='\0') i=-1;
-		    else
-		    {
-			buf.push_back(ascii2petscii(c));
-			printf("%c",c);
-		    }
-		}
-		if (i==-1)
-		{
-		    buf.push_back(0x22);
-		    printf("\"");
-		    i=-2;
-		}
-		else if (i==-2)
-		{
-		    buf.push_back(0x20);
-		    printf(" ");
-		}
-		break;
-	    }
-	}
-	printf("\n");
+        int i=0;
+        for (p = file_line; *p != -1; ++p)
+        {
+            switch(*p)
+            {
+            default:
+                buf.push_back(*p);
+                if (verbose) printf("%c", petscii2ascii(*p));
+                break;
+            case -2: // Blocks LSB
+                buf.push_back(blocks % 256);
+                break;
+            case -3: // Blocks MSB
+                buf.push_back(blocks / 256);
+                if (verbose) printf("%d",blocks);
+                if (blocks < 100)
+                {
+                    buf.push_back(0x20);
+                    if (verbose) printf(" ");
+                }
+                if (blocks < 10)
+                {
+                    buf.push_back(0x20);
+                    if (verbose) printf(" ");
+                }
+                break;
+            case -5: // Filename length hard limit
+                if (i>=0) i=-1;
+            case -4: // State machine for name writing
+                if (i>=0)
+                {
+                    char c = dp->d_name[i++];
+                    if (c=='\0') i=-1;
+                    else
+                    {
+                        buf.push_back(ascii2petscii(c));
+                        if (verbose) printf("%c",c);
+                    }
+                }
+                if (i==-1)
+                {
+                    buf.push_back(0x22);
+                    if (verbose) printf("\"");
+                    i=-2;
+                }
+                else if (i==-2)
+                {
+                    buf.push_back(0x20);
+                    printf(" ");
+                }
+                break;
+            }
+        }
+        if (verbose) printf("\n");
     }
 
     unsigned long freeblocks = 0;
     struct statvfs sfb;
     if (statvfs(dirname, &sfb)==0)
     {
-	freeblocks = sfb.f_bavail * (sfb.f_bsize/256);
-	if (freeblocks > 65535)
-	    freeblocks = 65535;
+        freeblocks = sfb.f_bavail * (sfb.f_bsize/256);
+        if (freeblocks > 65535)
+            freeblocks = 65535;
     }
 
     for (p = footer_line; *p != -1; ++p)
     {
-	switch(*p)
-	{
-	default:
-	    buf.push_back(*p);
-	    printf("%c", petscii2ascii(*p));
-	    break;
-	case -2: // Freeblocks LSB
-	    buf.push_back(freeblocks % 256);
-	    break;
-	case -3: // Freeblocks MSB
-	    buf.push_back(freeblocks / 256);
-	    printf("%d",freeblocks);
-	    if (freeblocks < 100)
-	    {
-		buf.push_back(0x20);
-		printf(" ");
-	    }
-	    if (freeblocks < 10)
-	    {
-		buf.push_back(0x20);
-		printf(" ");
-	    }
-	    break;
-	}
-    }    
-    printf("\n");
+        switch(*p)
+        {
+        default:
+            buf.push_back(*p);
+            if (verbose) printf("%c", petscii2ascii(*p));
+            break;
+        case -2: // Freeblocks LSB
+            buf.push_back(freeblocks % 256);
+            break;
+        case -3: // Freeblocks MSB
+            buf.push_back(freeblocks / 256);
+            if (verbose) printf("%lu ",freeblocks);
+            if (freeblocks < 100)
+            {
+                buf.push_back(0x20);
+                if (verbose) printf(" ");
+            }
+            if (freeblocks < 10)
+            {
+                buf.push_back(0x20);
+                if (verbose) printf(" ");
+            }
+            break;
+        }
+    }
+    if (verbose) printf("\n");
 }
 
-raspbiec_error::raspbiec_error(const int iec_status)
-{
-    m_status = iec_status;
-}
+static const int16_t header_line_diskimage[] =
+{ 0x01, 0x04, 0x01, 0x01, 0x00, 0x00, 0x12, 0x22,
+    -4,   -4,   -4,   -4,   -4,   -4,   -4,   -4,
+    -4,   -4,   -4,   -4,   -4,   -4,   -4,   -4,
+    -5,   -4,   -4,   -4,   -4,   -4,   -4, 0x00, -1 };
 
-raspbiec_error::~raspbiec_error() throw()
-{
-}
+void read_diskimage_dir(
+    std::vector<unsigned char> &buf,
+    Diskimage& diskimage,
+    bool verbose)
 
-int raspbiec_error::status() const
 {
-    return m_status;
-}
+    const int16_t *p;
 
-const char *raspbiec_error::what() const throw()
-{
-    switch(m_status)
+    Diskimage::Dirstate dirstate;
+    Diskimage::Direntry direntry;
+
+    if (!diskimage.opendir(dirstate))
     {
-    case IEC_OK:
-	return "OK";
-    case IEC_ILLEGAL_DEVICE_NUMBER:
-	return "illegal device number";
-    case IEC_MISSING_FILENAME:
-	return "missing filename";
-    case IEC_FILE_NOT_FOUND:
-	return "file not found";
-    case IEC_WRITE_TIMEOUT:
-	return "write timeout";
-    case IEC_READ_TIMEOUT:
-	return "read timeout";
-    case IEC_DEVICE_NOT_PRESENT:
-	return "device not present";
-    case IEC_ILLEGAL_STATE:
-	return "illegal state";
-    case IEC_GENERAL_ERROR:
-	return "general error";
-    case IEC_PREV_BYTE_HAS_ERROR:
-	return "previous byte has error";
-    case IEC_FILE_EXISTS:
-	return "file exists";
-    case IEC_DRIVER_NOT_PRESENT:
-	return "driver not present";
-    case IEC_OUT_OF_MEMORY:
-	return "out of memory";
-    case IEC_UNKNOWN_MODE:
-	return "unknown mode";
-    case IEC_SIGNAL:
-	return "caught a signal";
-    case IEC_BUS_NOT_IDLE:
-	return "IEC bus is not in idle state";
-    case IEC_SAVE_ERROR:
-	return "save error";
-    default:
-	snprintf(msg, sizeof msg, "raspbiec error %d (%c0x%X)\n",
-		 m_status, m_status<0?'-':' ', m_status<0?-m_status:m_status);
-	msg[(sizeof msg)-1] = '\0';
-	return msg;
+        throw raspbiec_error(IEC_DISK_IMAGE_ERROR);
+    }
+
+    // Construct a BASIC listing from the directory info
+
+    int i=0;
+    for (p = header_line_diskimage; *p != -1; ++p)
+    {
+        switch(*p)
+        {
+        default:
+            buf.push_back(*p);
+            if (verbose) printf("%c", petscii2ascii(*p));
+            break;
+
+        case -4: // State machine for name writing
+        {
+            char c = dirstate.name_id[i++];
+            if (c==0xA0) c=0x20;
+            buf.push_back(c);
+            if (verbose) printf("%c",petscii2ascii(c));
+            break;
+        }
+
+        case -5: // Diskname end quote
+            ++i;
+            buf.push_back(0x22);
+            if (verbose) printf("%c",petscii2ascii(0x22));
+            break;
+        }
+    }
+    if (verbose) printf("\n");
+
+    while (diskimage.readdir(dirstate,direntry))
+    {
+        if (direntry.filetype == 0x00)
+            continue; // TODO: filetypes
+
+        int blocks = direntry.size_hi * 0x100 + direntry.size_lo;
+
+        i=0;
+        for (p = file_line; *p != -1; ++p)
+        {
+            switch(*p)
+            {
+            default:
+                buf.push_back(*p);
+                if (verbose) printf("%c", petscii2ascii(*p));
+                break;
+            case -2: // Blocks LSB
+                buf.push_back(direntry.size_lo);
+                break;
+            case -3: // Blocks MSB
+                buf.push_back(direntry.size_hi);
+                if (verbose) printf("%d",blocks);
+                if (blocks < 100)
+                {
+                    buf.push_back(0x20);
+                    if (verbose) printf(" ");
+                }
+                if (blocks < 10)
+                {
+                    buf.push_back(0x20);
+                    if (verbose) printf(" ");
+                }
+                break;
+            case -5: // Filename length hard limit
+                if (i>=0) i=-1;
+            case -4: // State machine for name writing
+                if (i>=0)
+                {
+                    char c = direntry.name[i++];
+                    if (c==0xA0) i=-1;
+                    else
+                    {
+                        buf.push_back(c);
+                        if (verbose) printf("%c",petscii2ascii(c));
+                    }
+                }
+                if (i==-1)
+                {
+                    buf.push_back(0x22);
+                    if (verbose) printf("\"");
+                    i=-2;
+                }
+                else if (i==-2)
+                {
+                    buf.push_back(0x20);
+                    if (verbose) printf(" ");
+                }
+                break;
+            }
+        }
+        if (verbose) printf("\n");
+    }
+
+    for (p = footer_line; *p != -1; ++p)
+    {
+        switch(*p)
+        {
+        default:
+            buf.push_back(*p);
+            if (verbose) printf("%c", petscii2ascii(*p));
+            break;
+        case -2: // Freeblocks LSB
+            buf.push_back(dirstate.free_lo);
+            break;
+        case -3: // Freeblocks MSB
+            buf.push_back(dirstate.free_hi);
+            int freeblocks = dirstate.free_hi * 0x100 + dirstate.free_lo;
+            if (verbose) printf("%d ",freeblocks);
+            if (freeblocks < 100)
+            {
+                buf.push_back(0x20);
+                if (verbose) printf(" ");
+            }
+            if (freeblocks < 10)
+            {
+                buf.push_back(0x20);
+                if (verbose) printf(" ");
+            }
+            break;
+        }
+    }
+    if (verbose) printf("\n");
+}
+
+/*********************************************************************/
+
+static const char* raspbiecdevname = "/dev/raspbiec";
+
+
+pipefd::pipefd() :
+		m_fd_size(1)
+{
+	for (int i=0; i<4; ++i) m_fd[i] = -1;
+}
+
+pipefd::~pipefd()
+{
+	close_pipe();
+}
+
+void pipefd::move(pipefd &other)
+{
+	close_pipe();
+	for (int i=0; i<4; ++i) m_fd[i] = other.m_fd[i];
+	m_fd_size = other.m_fd_size;
+	for (int i=0; i<4; ++i) other.m_fd[i] = -1;
+	other.m_fd_size = 1;
+}
+
+void pipefd::close_pipe()
+{
+	for (int i=0; i<m_fd_size; ++i)
+	{
+		if (m_fd[i] >= 0) ::close(m_fd[i]);
+	}
+	for (int i=0; i<2; ++i)
+	{
+		m_fd[i] = -1;
+	}
+	m_fd_size = 1;
+}
+
+void pipefd::open_pipe()
+{
+	close_pipe();
+    m_fd_size = 4;
+    if (pipe(&m_fd[0]) == -1 ||
+    	pipe(&m_fd[2]) == -1)
+    {
+    	close_pipe();
+		throw raspbiec_error(IEC_DEVICE_NOT_PRESENT);
     }
 }
 
-struct sigaction raspbiec_sighandler::sa;
-bool raspbiec_sighandler::sigactive;
-
-void raspbiec_sighandler::setup(void)
+void pipefd::open_dev()
 {
-    sigactive = false;
-    sa.sa_flags = 0;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_handler = sighandler;
-    if (sigaction(SIGINT, &sa, NULL) == -1)
-    {
-	throw raspbiec_error(IEC_GENERAL_ERROR);
-    }
+	close_pipe();
+	int fd_dev = open(raspbiecdevname, O_RDWR);
+	if (fd_dev < 0)
+	{
+		int deverr = errno;
+		fprintf(stderr,"Cannot open %s\n",raspbiecdevname);
+		if (deverr == EREMOTEIO)
+			throw raspbiec_error(IEC_BUS_NOT_IDLE);
+		else
+			throw raspbiec_error(IEC_DRIVER_NOT_PRESENT);
+	}
+	m_fd[0] = fd_dev;
 }
 
-void raspbiec_sighandler::react(bool want_to_catch)
+bool pipefd::is_open_directional()
 {
-    sigactive = want_to_catch;
+	if (is_device()) // bidirectional
+	{
+		return (m_fd[0] >= 0);
+	}
+	// two unidirectional pipes, 0 and 3 or 1 and 2
+	if (m_fd[0] >= 0 && m_fd[1] < 0 && m_fd[2] < 0 && m_fd[3] >= 0) return true;
+	if (m_fd[0] < 0 && m_fd[1] >= 0 && m_fd[2] >= 0 && m_fd[3] < 0) return true;
+	return false;
 }
 
-void raspbiec_sighandler::sighandler(int sig)
+bool pipefd::is_open_nondirectional()
 {
-    if (sigactive)
-    {
-	if (signal(sig, SIG_DFL) != SIG_ERR)
+	for (int i=0; i<m_fd_size; ++i) if (m_fd[i] < 0) return false;
+	return true;
+}
+
+bool pipefd::is_device()
+{
+    return 1 == m_fd_size;
+}
+
+void pipefd::set_write(int *fd)
+{
+	if (fd[0] >= 0)
 	{
-	    raise(sig);
+		close(fd[0]); // Close unused read end
+		fd[0] = -1;
 	}
-	else
+	if (fd[1] < 0) // Check write end is open
 	{
-	    abort();
+		throw raspbiec_error(IEC_DEVICE_NOT_PRESENT);
 	}
-    }
+}
+
+void pipefd::set_read(int *fd)
+{
+	if (fd[1] >= 0)
+	{
+		close(fd[1]); // Close unused write end
+		fd[1] = -1;
+	}
+	if (fd[0] < 0) // Check read end is open
+	{
+		throw raspbiec_error(IEC_DEVICE_NOT_PRESENT);
+	}
+}
+
+void pipefd::set_direction(bool fwd)
+{
+	if (!is_device()) // two unidirectional pipes
+	{
+		if (fwd) // these directions are arbitrary
+		{
+			set_write(&m_fd[0]);
+			set_read(&m_fd[2]);
+		}
+		else
+		{
+			set_read(&m_fd[0]);
+			set_write(&m_fd[2]);
+		}
+	}
+}
+
+int pipefd::write_end()
+{
+	if (!is_open_directional()) throw raspbiec_error(IEC_DEVICE_NOT_PRESENT);
+
+	if (is_device()) // bidirectional
+	{
+		return m_fd[0];
+	}
+	// two unidirectional pipes
+	return (m_fd[1] >= 0) ? m_fd[1] : m_fd[3];
+}
+
+int pipefd::read_end()
+{
+	if (!is_open_directional()) throw raspbiec_error(IEC_DEVICE_NOT_PRESENT);
+
+	if (is_device()) // bidirectional
+	{
+		return m_fd[0];
+	}
+	// two unidirectional pipes
+	return (m_fd[0] >= 0) ? m_fd[0] : m_fd[2];
 }

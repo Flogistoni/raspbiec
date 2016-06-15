@@ -17,16 +17,25 @@ ifeq ($(strip $(KERNEL_SRC)),)
 	$(error KERNEL_SRC not set (path to kernel source))
 endif
 
-raspbiec: raspbiec.o raspbiec_device.o raspbiec_utils.o
+raspbiec: raspbiec.o raspbiec_device.o raspbiec_utils.o raspbiec_exception.o raspbiec_diskimage.o raspbiec_drive.o
 	${CCPREFIX}g++ $^ -o $@
 
-raspbiec.o: raspbiec.cpp raspbiec.h raspbiec_device.h raspbiec_utils.h raspbiec_common.h
+raspbiec.o: raspbiec.cpp raspbiec.h raspbiec_device.h raspbiec_utils.h raspbiec_exception.h raspbiec_diskimage.h raspbiec_common.h
 	${CCPREFIX}g++ -c $<
 
-raspbiec_device.o: raspbiec_device.cpp raspbiec_device.h raspbiec_utils.h raspbiec_common.h
+raspbiec_device.o: raspbiec_device.cpp raspbiec_device.h raspbiec_utils.h raspbiec_exception.h raspbiec_common.h
 	${CCPREFIX}g++ -c $<
 
-raspbiec_utils.o: raspbiec_utils.cpp raspbiec_utils.h raspbiec_common.h
+raspbiec_diskimage.o: raspbiec_diskimage.cpp raspbiec_diskimage.h raspbiec_utils.h raspbiec_exception.h raspbiec_common.h 
+	${CCPREFIX}g++ -c $<
+
+raspbiec_drive.o: raspbiec_drive.cpp raspbiec_drive.h raspbiec_utils.h raspbiec_exception.h raspbiec_common.h 
+	${CCPREFIX}g++ -c $<
+
+raspbiec_exception.o: raspbiec_exception.cpp raspbiec_exception.h raspbiec_common.h
+	${CCPREFIX}g++ -c $<
+
+raspbiec_utils.o: raspbiec_utils.cpp raspbiec_utils.h raspbiec_exception.h raspbiec_common.h
 	${CCPREFIX}g++ -c $<
 
 ifneq ($(KERNELRELEASE),)
@@ -47,7 +56,7 @@ raspbiecdrv:
 endif
 
 clean:
-	rm -rf *.o *.ko *~ core .depend *.mod.c .*.cmd .tmp_versions .*.o.d
+	rm -rf *.o *.ko *~ core .depend *.mod.c .*.cmd .tmp_versions .*.o.d *.gch
 
 depend .depend dep:
 	$(CC) $(CFLAGS) -M *.c > .depend
