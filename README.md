@@ -9,8 +9,7 @@ Commodore serial (IEC) bus interface for Raspberry Pi
 It can  take the role of the computer or the disk drive. It has been
 developed and tested with a Commodore 64 and a 1541-II.
 
-
-What it can currently do:
+This is the development version. What it can currently do:
 
 * Load and save single PRG files to the disk drive
 * Serve single PRG files (load and save) from a Pi directory to the computer
