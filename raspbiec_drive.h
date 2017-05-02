@@ -91,6 +91,7 @@ private:
 	void receive_name_or_command(channel &ch);
 	int determine_command(channel &ch);
 	int execute_command(channel &ch);
+        int parse_command(channel &ch);
 
 
 private:

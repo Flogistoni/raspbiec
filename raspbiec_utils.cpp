@@ -60,7 +60,7 @@ bool ispetsciinum(const unsigned char c)
 bool ispetsciialpha(const unsigned char c)
 {
 	return
-		(c >= 0x41 && c <= 0x5A) ||
+		((c >= 0x41 && c <= 0x5A) ||
 		(c >= 0x61 && c <= 0x7A) ||
 		(c >= 0xC1 && c <= 0xDA));
 }

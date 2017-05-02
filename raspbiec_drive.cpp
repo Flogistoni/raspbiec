@@ -19,7 +19,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <cctype>
-#include <unordered_map>
+//#include <unordered_map>
 #include "raspbiec_drive.h"
 #include "raspbiec_exception.h"
 #include "raspbiec_utils.h"
@@ -438,8 +438,8 @@ int drive::determine_command(channel &ch)
 
 struct usercommand_t
 {
-	usercommand command;
-	char *pattern;
+  drive::usercommand command;
+  char const *pattern;
 };
 
 // Syntax:
@@ -458,25 +458,25 @@ static const usercommand_t usercommand_table[] =
 //
 // C "COPY:newfile=oldfile"
 // 'c'*[d]':'<name>'='[[d]':']<name>(','[[d]':']<name>){0,3}
-	{ UC_COPY,			 "'c'*[d]':'$newname'='[[d]':']$oldname1][','[[d]':']$oldname2][','[[d]':']$oldname3][','[[d]':']$oldname4]" },
+	{ drive::UC_COPY,			 "'c'*[d]':'$newname'='[[d]':']$oldname1][','[[d]':']$oldname2][','[[d]':']$oldname3][','[[d]':']$oldname4]" },
 // Syntax pattern: filestream 1 - exactly 1 name, no wildcards
 //                 filestream 2 - 1-4 names, no wildcards
 
 // R "RENAME:newname=oldname"
 // 'r'*[d]':'<name>'='[[d]':']<name>
-	{ UC_RENAME,		 "'r'*[d]':'$newname'='[[d]':']$oldname" },
+	{ drive::UC_RENAME,		 "'r'*[d]':'$newname'='[[d]':']$oldname" },
 // Syntax pattern: filestream 1 - exactly 1 name, no wildcards
 //                 filestream 2 - exactly 1 name, no wildcards
 
 // S "SCRATCH:name"
 // 's'*[d]':'<name>(','[[d]':']<name>){0,4}['='<type>]
-	{ UC_SCRATCH,		 "'s'*[d]':'$name1[','[[d]':']$name2][','[[d]':']$name3][','[[d]':']$name4][','[[d]':']$name5]['='$type]" },
+	{ drive::UC_SCRATCH,		 "'s'*[d]':'$name1[','[[d]':']$name2][','[[d]':']$name3][','[[d]':']$name4][','[[d]':']$name5]['='$type]" },
 // Syntax pattern: filestream 1 - 1-5 names
 //                 filestream 2 - optional filetype, no wildcards
 
 // N "NEW:name,id" - format
 // 'n'*[d]':'<name>[,<id>]
-	{ UC_NEW,			 "'n'*[d]':'$name[,$id]" },
+	{ drive::UC_NEW,			 "'n'*[d]':'$name[,$id]" },
 // Syntax pattern: filestream 1 - 1-2 names (additionals ignored), no wildcards
 // Syntax pattern: filestream 2 - optional name, no wildcards (ignored)
 
@@ -498,24 +498,24 @@ static const usercommand_t usercommand_table[] =
 // U;/UJ - power-up vector "The issuance of a UJ command is supposed to reset the 1541. Instead, it hangs the 1541."
 // UI+   - Set C64 speed
 // UI-   - set VIC-20 speed
-	{ UC_USER,		 "'u'@user[?#channel,#drive,#track,#sector]" },
+	{ drive::UC_USER,		 "'u'@user[?#channel,#drive,#track,#sector]" },
 
 // ['b-'x|'b'*'-'x*':']<PETSCII numbers separated by blank/comma/cursor right>
-	{ UC_BLOCK_READ,	 "'b'['-r'|*'-r'*':']#channel,#drive,#track,#sector" },
-	{ UC_BLOCK_WRITE,    "'b'['-w'|*'-w'*':']#channel,#drive,#track,#sector" },
-	{ UC_BLOCK_ALLOCATE, "'b'['-a'|*'-a'*':']#drive,#track,#sector" },
-	{ UC_BLOCK_FREE,     "'b'['-f'|*'-f'*':']#drive,#track,#sector" },
-	{ UC_BUFFER_POINTER, "'b'['-p'|*'-p'*':']#channel,#location" },
-	{ UC_BLOCK_EXECUTE,	 "'b'['-e'|*'-e'*':']#channel,#drive,#track,#sector" },
+	{ drive::UC_BLOCK_READ,	 "'b'['-r'|*'-r'*':']#channel,#drive,#track,#sector" },
+	{ drive::UC_BLOCK_WRITE,    "'b'['-w'|*'-w'*':']#channel,#drive,#track,#sector" },
+	{ drive::UC_BLOCK_ALLOCATE, "'b'['-a'|*'-a'*':']#drive,#track,#sector" },
+	{ drive::UC_BLOCK_FREE,     "'b'['-f'|*'-f'*':']#drive,#track,#sector" },
+	{ drive::UC_BUFFER_POINTER, "'b'['-p'|*'-p'*':']#channel,#location" },
+	{ drive::UC_BLOCK_EXECUTE,	 "'b'['-e'|*'-e'*':']#channel,#drive,#track,#sector" },
 
 // 'm-'x<binary data>
-	{ UC_MEMORY_READ,	 "'m-r'@address_lo@address_hi[@num_bytes]" },
-	{ UC_MEMORY_WRITE,	 "'m-w'@address_lo@address_hi@num_bytes@data_bytes+" }, // num_bytes = 1..34
-	{ UC_MEMORY_EXECUTE, "'m-e'@address_lo@address_hi" },
+	{ drive::UC_MEMORY_READ,	 "'m-r'@address_lo@address_hi[@num_bytes]" },
+	{ drive::UC_MEMORY_WRITE,	 "'m-w'@address_lo@address_hi@num_bytes@data_bytes+" }, // num_bytes = 1..34
+	{ drive::UC_MEMORY_EXECUTE, "'m-e'@address_lo@address_hi" },
 
-	{ UC_DUPLICATE, 	 "'d'*" },
-	{ UC_INITIALIZE, 	 "'i'*[d][':']" },
-	{ UC_VALIDATE, 		 "'v'*[d][':']" },
+	{ drive::UC_DUPLICATE, 	 "'d'*" },
+	{ drive::UC_INITIALIZE, 	 "'i'*[d][':']" },
+	{ drive::UC_VALIDATE, 		 "'v'*[d][':']" },
 
 // FORMAT FOR THE RECORD# COMMAND:
 // PRINT#15, "P" + CHR$ (channel # + 96) + CHR$ (<record #) + CHR$(>record #) + CHR$ (offset)
@@ -525,7 +525,7 @@ static const usercommand_t usercommand_table[] =
 // optional "offset" value, if present, is the byte within the record at which a following
 // Read or Write should begin.
 // "P"<binary data>
-	{ UC_POSITION,		 "'p'@channel@record_lo@record_hi@offset" },
+	{ drive::UC_POSITION,		 "'p'@channel@record_lo@record_hi@offset" },
 
 // Utility loader
 // Normal entry:
@@ -544,11 +544,11 @@ static const usercommand_t usercommand_table[] =
 //
 // The name on the disk must actually be '&<name>' due to what I think is a parsing bug
 // Also for the same reason anything after the first comma is ignored ('&' + first name of the filestream is used)
-	{ UC_UTIL_LDR,		 "'&'$name" },
+	{ drive::UC_UTIL_LDR,		 "'&'$name" },
 
 // Table end marker
-	{ UC_NONE, 			 "" }
-}
+	{ drive::UC_NONE, 			 "" }
+};
 
 // Opening a file:
 // *[[d]':']<name>[','<type>][','<mode>]
@@ -632,6 +632,7 @@ enum optionstate_t
 
 int drive::parse_command(channel &ch)
 {
+#if 0
 	ch.usrcmd = UC_NONE;
 	size_t len = ch.petscii.size();
 	if (len > 1)
@@ -781,6 +782,7 @@ int drive::parse_command(channel &ch)
 		}
 	}
 	while (!match)
+#endif
 
 	return 0;
 }
