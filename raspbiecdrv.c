@@ -607,6 +607,10 @@ static int __init raspbiec_module_init(void)
         irqi[irqs_active].index = irqs_active;
     }
 
+    hrtimer_init(&raspbiec_timer_timeout, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+    raspbiec_timer_timeout.function = &raspbiec_timeout_callback;
+    tasklet_init(&raspbiec_tasklet, raspbiec_tasklet_callback, 0);
+
     current_state = IEC_RESET;
     raspbiec_state_machine(iec_user,-1);
     atomic_set(&irq_queue, 0);
@@ -615,9 +619,6 @@ static int __init raspbiec_module_init(void)
     under_atn = false;
     notify_error = iec_no_error;
     talk_interrupted = false;
-    hrtimer_init(&raspbiec_timer_timeout, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-    raspbiec_timer_timeout.function = &raspbiec_timeout_callback;
-    tasklet_init(&raspbiec_tasklet, raspbiec_tasklet_callback, 0);
 
     event_wait_mask = 0;
     service_ints = true;
